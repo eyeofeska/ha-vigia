@@ -36,13 +36,29 @@ class SourceError(Exception):
 
 
 class InvalidKey(SourceError):
-    """The FIRMS map key was refused."""
+    """An API key was refused."""
 
 
-async def _get(session: aiohttp.ClientSession, url: str, **params: Any) -> str:
+class RateLimited(SourceError):
+    """The source asked us to slow down (HTTP 429)."""
+
+    def __init__(self, retry_after: float | None) -> None:
+        super().__init__("rate limited (HTTP 429)")
+        self.retry_after = retry_after
+
+
+async def _get(session: aiohttp.ClientSession, url: str, headers: dict | None = None, **params: Any) -> str:
     try:
-        async with session.get(url, params=params or None, timeout=TIMEOUT, headers=HEADERS) as r:
+        async with session.get(url, params=params or None, timeout=TIMEOUT, headers={**HEADERS, **(headers or {})}) as r:
             text = await r.text()
+            if r.status == 429:
+                try:
+                    retry = float(r.headers.get("Retry-After", ""))
+                except ValueError:
+                    retry = None
+                raise RateLimited(retry)
+            if r.status in (401, 403) and headers:
+                raise InvalidKey(f"HTTP {r.status}")
             if r.status != 200:
                 raise SourceError(f"HTTP {r.status}")
             return text
@@ -50,8 +66,8 @@ async def _get(session: aiohttp.ClientSession, url: str, **params: Any) -> str:
         raise SourceError(type(err).__name__) from err
 
 
-async def _json(session: aiohttp.ClientSession, url: str, **params: Any) -> Any:
-    text = await _get(session, url, **params)
+async def _json(session: aiohttp.ClientSession, url: str, headers: dict | None = None, **params: Any) -> Any:
+    text = await _get(session, url, headers, **params)
     try:
         return json.loads(text)
     except ValueError as err:
@@ -103,9 +119,9 @@ async def ipma_warnings(session, area: str) -> list[dict]:
 
 # ---------- fogos.pt (ANEPC incidents) ----------
 
-async def fogos(session, lat: float, lon: float, radius: float) -> list[dict]:
-    """Civil protection incidents within the radius."""
-    data = await _json(session, URL_FOGOS)
+async def fogos(session, lat: float, lon: float, radius: float, key: str | None = None) -> list[dict]:
+    """Civil protection incidents within the radius. fogos.pt asks for an individual key (X-API-Key)."""
+    data = await _json(session, URL_FOGOS, {"X-API-Key": key} if key else None)
     items = data.get("data") if isinstance(data, dict) else data
     out = []
     for f in items or []:
@@ -186,10 +202,25 @@ def _num(v: Any) -> float | None:
 
 # ---------- EFFIS burnt areas ----------
 
-def _round_coords(c: Any) -> Any:
-    if isinstance(c, (list, tuple)) and c and isinstance(c[0], (int, float)):
-        return [round(c[0], 4), round(c[1], 4)]
-    return [_round_coords(x) for x in c]
+def _thin_ring(ring: list) -> list:
+    """Round to ~10 m and drop points within ~30 m of the last kept one; burnt areas only need their outline."""
+    out = []
+    for x, y, *_ in ring:
+        p = [round(x, 4), round(y, 4)]
+        if not out or abs(p[0] - out[-1][0]) + abs(p[1] - out[-1][1]) >= 0.0004:
+            out.append(p)
+    if out and out[0] != out[-1]:
+        out.append(out[0])
+    return out if len(out) >= 4 else []
+
+
+def _thin(geom: dict) -> dict | None:
+    if geom["type"] == "Polygon":
+        rings = [r for r in (_thin_ring(r) for r in geom["coordinates"]) if r]
+        return {"type": "Polygon", "coordinates": rings} if rings else None
+    polys = [[r for r in (_thin_ring(r) for r in poly) if r] for poly in geom["coordinates"]]
+    polys = [p for p in polys if p]
+    return {"type": "MultiPolygon", "coordinates": polys} if polys else None
 
 
 async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
@@ -218,9 +249,12 @@ async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
         geom = f.get("geometry")
         if not geom or geom.get("type") not in ("Polygon", "MultiPolygon"):
             continue
+        thin = _thin(geom)
+        if not thin:
+            continue
         out.append({
             "type": "Feature",
-            "geometry": {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])},
+            "geometry": thin,
             "properties": {"date": date[:10], "area_ha": _num(props.get("area_ha")), "place": props.get("commune") or props.get("province")},
         })
     return out

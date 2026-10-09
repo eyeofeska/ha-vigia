@@ -7,9 +7,9 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_LATITUDE, CONF_LONGITUDE, CONF_MAP_KEY
+from .const import CONF_FOGOS_KEY, CONF_LATITUDE, CONF_LONGITUDE, CONF_MAP_KEY
 
-REDACT = {CONF_MAP_KEY, CONF_LATITUDE, CONF_LONGITUDE, "home", "lat", "lon"}
+REDACT = {CONF_MAP_KEY, CONF_FOGOS_KEY, CONF_LATITUDE, CONF_LONGITUDE, "home", "lat", "lon"}
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
@@ -25,6 +25,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "alert": async_redact_data(d.get("alert") or {}, REDACT),
         "counts": d.get("counts"),
         "burnt_areas": len(d.get("burnt") or []),
+        "burnt_dates": sorted({f["properties"].get("date", "")[:7] for f in d.get("burnt") or []}),
+        "burnt_vertices": sum(len(str(f["geometry"]["coordinates"])) // 20 for f in d.get("burnt") or []),
         "wind_grid_points": len(d.get("wind_grid") or []),
         "alerted_fires": len(c.alerted),
         "test_mode": c.test_mode,

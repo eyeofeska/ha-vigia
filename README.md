@@ -25,7 +25,7 @@ Each fire alerts once. It alerts again only if it moves up a tier or comes more 
 | Source | Gives | Refresh |
 |---|---|---|
 | [IPMA](https://www.ipma.pt) | Fire risk today and tomorrow for your concelho, weather warnings for your district | 60 min, 15 min |
-| [fogos.pt](https://fogos.pt) | Active incidents reported by civil protection (ANEPC), often faster than satellites | 5 min |
+| [fogos.pt](https://fogos.pt) | Active incidents reported by civil protection (ANEPC), often faster than satellites | 5 min with a key, 15 min without |
 | [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov) | VIIRS satellite hotspots (NOAA-20, NOAA-21, S-NPP), up to about 3 h behind | 10 min |
 | [EFFIS](https://forest-fire.emergency.copernicus.eu) | This season's burnt areas, © Copernicus | 6 h |
 | [Open-Meteo](https://open-meteo.com) | Wind across the map | 30 min |
@@ -38,6 +38,7 @@ Everything is fetched by Home Assistant and kept, so the tile, map and alerts ca
 1. In HACS, open the menu › **Custom repositories**, add `https://github.com/eyeofeska/ha-vigia` as an **Integration**, then download **Vigia**.
 2. Restart Home Assistant.
 3. **Settings › Devices & services › Add integration › Vigia.**
+   - **fogos.pt API key** (optional, free): fogos.pt asks each user to [request their own key](https://fogos.pt/en/api). Without one Vigia polls every 15 minutes and backs off when asked; shared connections (Starlink, mobile data) may still be rate limited.
    - **NASA FIRMS map key** (optional, free): request one at [firms.modaps.eosdis.nasa.gov/api/map_key](https://firms.modaps.eosdis.nasa.gov/api/map_key). Without it you get IPMA and fogos.pt only. The key stays in Home Assistant.
    - **Weather entity**: the one used for wind at home (e.g. `weather.forecast_home`).
    - Home comes from Home Assistant unless you set a latitude and longitude.
@@ -75,7 +76,7 @@ Alerts are fired as the `vigia_alert` event, with `tier`, `title`, `message`, `u
 ## Notes
 
 - Urgent alerts use the `alarm_stream` channel on Android and critical alerts on iOS. On iOS, allow critical alerts for the Home Assistant app the first time.
-- fogos.pt is a volunteer project. Vigia polls it every 5 minutes with a clear user agent; please don't lower that.
+- fogos.pt is a volunteer project with its own [terms](https://fogos.pt/en/api-termos): use your own key, keep the polling gentle, show "Source: Fogos.pt" with its data, and never rely on it alone for alerts. Vigia identifies itself, honours rate limits, and pairs fogos.pt with satellite data.
 - Vigia is a helper, not a warning system. Follow official advice from ANEPC and your local civil protection.
 
 ## Development

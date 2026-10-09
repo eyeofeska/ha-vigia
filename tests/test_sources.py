@@ -78,3 +78,18 @@ async def test_firms_bad_key(hass, aioclient_mock):
     aioclient_mock.get(_firms_url("BAD", "VIIRS_NOAA20_NRT"), text="Invalid MAP_KEY.")
     with pytest.raises(sources.InvalidKey):
         await sources.firms(async_get_clientsession(hass), "BAD", *HOME, 30)
+
+
+async def test_effis_thins_and_filters_year(hass, aioclient_mock):
+    from datetime import datetime
+    from custom_components.vigia.const import URL_EFFIS
+    y = datetime.now().year
+    ring = [[-8.6 + i * 0.00001, 41.7] for i in range(200)] + [[-8.59, 41.71], [-8.6, 41.71], [-8.6, 41.7]]
+    feats = [
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y}-08-12 00:00:00", "AREA_HA": 140}},
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y - 1}-08-12 00:00:00", "AREA_HA": 99}},
+    ]
+    aioclient_mock.get(URL_EFFIS, json={"type": "FeatureCollection", "features": feats})
+    out = await sources.effis(async_get_clientsession(hass), *HOME, 30)
+    assert len(out) == 1 and out[0]["properties"]["area_ha"] == 140
+    assert len(out[0]["geometry"]["coordinates"][0]) < 20

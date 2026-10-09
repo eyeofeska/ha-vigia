@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -223,13 +223,16 @@ class VigiaCard extends HTMLElement {
       `<span title="${esc(v.error || "")}"><i class="dot" style="background:${v.ok ? "#3DAA5C" : v.updated ? "#D9A400" : "#E0402C"}"></i>${esc(SOURCE_NAMES[k] || k)} ${v.ok ? hhmm(v.updated) : esc(v.error || "waiting")}</span>`).join("");
     const firms = d.sources.firms && d.sources.firms.enabled ? "" :
       `<div class="note">Satellite hotspots are off. Add a free NASA FIRMS map key in Settings › Devices & services › Vigia › Configure.</div>`;
+    const fg = d.sources.fogos;
+    const fogosNote = fg && fg.enabled && /429|rate/i.test(fg.error || "")
+      ? `<div class="note">fogos.pt is limiting requests from this connection. Request your own free key at fogos.pt/en/api and add it in Settings › Devices & services › Vigia › Configure.</div>` : "";
     return `<div class="grid">${sets}</div>
       <div class="actions">
         <button class="btn${d.test_mode ? " hot" : ""}" data-a="test">${d.test_mode ? "end test fire" : "show a test fire"}</button>
         <button class="btn" data-a="alert">send test alert</button>
         <button class="btn" data-a="map">open map</button>
       </div>
-      <div class="sources">${src}</div>${firms}`;
+      <div class="sources">${src}</div>${firms}${fogosNote}`;
   }
 
   _panelClick(ev) {

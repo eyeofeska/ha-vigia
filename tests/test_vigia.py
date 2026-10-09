@@ -164,3 +164,34 @@ async def test_websocket(hass, hass_ws_client, feeds):
 async def test_no_key_disables_firms(hass, feeds):
     entry = await _setup(hass, map_key="")
     assert entry.runtime_data.data["sources"]["firms"]["enabled"] is False
+
+
+async def test_rate_limit_backs_off(hass, feeds):
+    from unittest.mock import patch
+    from custom_components.vigia import sources
+
+    entry = await _setup(hass)
+    c = entry.runtime_data
+    calls = []
+
+    async def limited(*a, **k):
+        calls.append(1)
+        raise sources.RateLimited(None)
+
+    c.cache["fogos"]["fetched"] = 0
+    with patch("custom_components.vigia.sources.fogos", limited):
+        await c.async_refresh()
+        await c.async_refresh()  # still inside the back-off window: not called again
+    assert len(calls) == 1
+    assert c.data["sources"]["fogos"]["error"].startswith("rate limited")
+    assert c.cache["fogos"]["backoff_until"] > 0
+
+
+async def test_fogos_key_is_sent(hass, aioclient_mock):
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.vigia import sources
+    from custom_components.vigia.const import URL_FOGOS
+
+    aioclient_mock.get(URL_FOGOS, json={"success": True, "data": []})
+    await sources.fogos(async_get_clientsession(hass), *HOME, 30, "abc")
+    assert aioclient_mock.mock_calls[0][3]["X-API-Key"] == "abc"

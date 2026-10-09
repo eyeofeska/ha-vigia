@@ -14,6 +14,7 @@ from . import sources
 from .const import (
     CONF_EFFIS,
     CONF_FOGOS,
+    CONF_FOGOS_KEY,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_MAP_KEY,
@@ -40,6 +41,9 @@ def _schema(hass: HomeAssistant, d: dict[str, Any]) -> vol.Schema:
             selector.NumberSelectorConfig(min=10, max=60, step=5, unit_of_measurement="km", mode=selector.NumberSelectorMode.SLIDER)
         ),
         vol.Required(CONF_FOGOS, default=d.get(CONF_FOGOS, True)): selector.BooleanSelector(),
+        vol.Optional(CONF_FOGOS_KEY, description={"suggested_value": d.get(CONF_FOGOS_KEY)}): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
         vol.Required(CONF_EFFIS, default=d.get(CONF_EFFIS, True)): selector.BooleanSelector(),
         vol.Optional(CONF_LATITUDE, description={"suggested_value": d.get(CONF_LATITUDE)}): selector.NumberSelector(
             selector.NumberSelectorConfig(min=-90, max=90, step="any", mode=selector.NumberSelectorMode.BOX)
@@ -69,6 +73,7 @@ async def _validate(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, str]
 def _clean(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data)
     out[CONF_MAP_KEY] = (out.get(CONF_MAP_KEY) or "").strip()
+    out[CONF_FOGOS_KEY] = (out.get(CONF_FOGOS_KEY) or "").strip()
     out[CONF_RADIUS] = int(out.get(CONF_RADIUS) or DEFAULT_RADIUS)
     return out
 

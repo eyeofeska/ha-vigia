@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "vigia"
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 EVENT_ALERT = "vigia_alert"
 STATIC_URL = "/vigia_static"
@@ -15,6 +15,7 @@ CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
 CONF_RADIUS = "radius_km"
 CONF_FOGOS = "use_fogos"
+CONF_FOGOS_KEY = "fogos_key"
 CONF_EFFIS = "use_effis"
 
 DEFAULT_RADIUS = 30
@@ -61,7 +62,7 @@ FIRMS_SOURCES = ["VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT"]
 REFRESH = {
     "ipma_risk": 60,
     "ipma_warnings": 15,
-    "fogos": 5,
+    "fogos": 5,  # 15 without a fogos.pt key
     "firms": 10,
     "effis": 360,
     "wind": 30,

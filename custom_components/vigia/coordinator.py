@@ -21,6 +21,7 @@ from .const import (
     CLOSER_BY_KM,
     CONF_EFFIS,
     CONF_FOGOS,
+    CONF_FOGOS_KEY,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_MAP_KEY,
@@ -109,8 +110,10 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
         if stored.get("home") != [*self.home, self.radius]:
             for name in ("fogos", "firms", "effis", "wind"):
                 self.cache.pop(name, None)
+        now = time.time()
         for c in self.cache.values():
-            c["fetched"] = 0  # refetch everything on start
+            if c.get("backoff_until", 0) <= now:
+                c["fetched"] = 0  # refetch everything on start, except sources that asked us to wait
 
     def _save(self) -> None:
         self._store.async_delay_save(lambda: {
@@ -191,7 +194,7 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
                     raise sources.SourceError("waiting for IPMA concelho" if not dico else "no warning area here")
                 data = await sources.ipma_warnings(self.session, area)
             elif name == "fogos":
-                data = await sources.fogos(self.session, lat, lon, self.radius)
+                data = await sources.fogos(self.session, lat, lon, self.radius, self.opts.get(CONF_FOGOS_KEY) or None)
             elif name == "firms":
                 data = await sources.firms(self.session, self.opts[CONF_MAP_KEY], lat, lon, self.radius)
             elif name == "effis":
@@ -200,11 +203,19 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
                 data = await sources.wind_grid(self.session, lat, lon, self.radius)
             else:
                 return
+        except sources.RateLimited as err:
+            # back off: honour Retry-After, otherwise double the wait each time, up to an hour
+            c["strikes"] = min(c.get("strikes", 0) + 1, 6)
+            wait = err.retry_after or REFRESH[name] * 60 * 2 ** c["strikes"]
+            c["backoff_until"] = time.time() + min(max(wait, 60), 3600)
+            c["ok"], c["error"] = False, str(err)
+            _LOGGER.debug("Vigia: %s rate limited, waiting %.0f s", name, c["backoff_until"] - time.time())
+            return
         except Exception as err:  # noqa: BLE001  one bad source must never stop the others
             c["ok"], c["error"] = False, str(err) or type(err).__name__
             _LOGGER.debug("Vigia: %s failed: %s", name, c["error"])
             return
-        c.update(data=data, ok=True, error=None, updated=datetime.now(timezone.utc).isoformat())
+        c.update(data=data, ok=True, error=None, updated=datetime.now(timezone.utc).isoformat(), strikes=0, backoff_until=0)
 
     def _due(self, name: str) -> bool:
         if not self._enabled(name):
@@ -212,7 +223,11 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
         c = self.cache.get(name)
         if not c:
             return True
+        if time.time() < c.get("backoff_until", 0):
+            return False
         period = REFRESH[name] * 60
+        if name == "fogos" and not self.opts.get(CONF_FOGOS_KEY):
+            period = 15 * 60  # be gentle without a key
         if not c.get("ok"):
             period = min(period, 5 * 60)  # retry failed sources every 5 min
         return time.time() - c.get("fetched", 0) >= period - 30
