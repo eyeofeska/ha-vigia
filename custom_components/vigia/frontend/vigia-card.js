@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.5";
+const VERSION = "0.1.6";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -268,11 +268,12 @@ class VigiaMap extends HTMLElement {
       <link rel="stylesheet" href="${LEAFLET}leaflet.min.css">
       <style>
         :host { display:block; position:relative; height:100%; min-height:240px; font-family:'Lato',sans-serif; }
-        #map { position:absolute; inset:0; background:#E9E5DC; border-radius:inherit; }
+        #map { position:absolute; inset:0; background:#E3E8D3; border-radius:inherit; }
         .msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:13px; text-align:center; padding:20px; }
         .msg[hidden] { display:none; }  /* without this the empty message layer covers the map and eats every touch */
         .leaflet-container { font-family:'Lato',sans-serif; }
         .hill { mix-blend-mode:multiply; }
+        .sage { filter:sepia(.45) hue-rotate(28deg) saturate(1.45) brightness(.97); }  /* grey base tinted to a muted sage green */
         .leaflet-popup-content { font-size:13px; line-height:1.45; margin:10px 12px; }
         .leaflet-popup-content b { font-weight:800; }
         .leaflet-popup-content a { color:#C2410C; font-weight:700; }
@@ -315,8 +316,8 @@ class VigiaMap extends HTMLElement {
     map.attributionControl.setPrefix(false);
     // keyless Esri tiles: light grey base, hillshade multiplied in for terrain, place names on top
     const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/MapServer/tile/{z}/{y}/{x}`;
-    L.tileLayer(esri("Canvas/World_Light_Gray_Base"), { maxZoom: 18, maxNativeZoom: 16, attribution: "Esri, HERE, Garmin, © OpenStreetMap contributors" }).addTo(map);
-    L.tileLayer(esri("Elevation/World_Hillshade"), { maxZoom: 18, maxNativeZoom: 16, opacity: 0.45, className: "hill", attribution: "Hillshade © Esri" }).addTo(map);
+    L.tileLayer(esri("Canvas/World_Light_Gray_Base"), { maxZoom: 18, maxNativeZoom: 16, className: "sage", attribution: "Esri, HERE, Garmin, © OpenStreetMap contributors" }).addTo(map);
+    L.tileLayer(esri("Elevation/World_Hillshade"), { maxZoom: 18, maxNativeZoom: 16, opacity: 0.5, className: "hill", attribution: "Hillshade © Esri" }).addTo(map);
     map.createPane("labels").style.zIndex = 380;
     map.getPane("labels").style.pointerEvents = "none";
     L.tileLayer(esri("Canvas/World_Light_Gray_Reference"), { pane: "labels", maxZoom: 18, maxNativeZoom: 16 }).addTo(map);
