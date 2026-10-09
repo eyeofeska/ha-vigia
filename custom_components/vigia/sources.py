@@ -189,15 +189,17 @@ async def firms(session, key: str, lat: float, lon: float, radius: float) -> lis
                 "lat": hlat, "lon": hlon, "time": when.isoformat(),
                 "sat": {"VIIRS_NOAA20_NRT": "NOAA-20", "VIIRS_NOAA21_NRT": "NOAA-21", "VIIRS_SNPP_NRT": "S-NPP"}[src],
                 "frp": _num(row.get("frp")), "confidence": row.get("confidence"), "daynight": row.get("daynight"),
+                # pixel size in km (along scan, along track): ~0.375 under the satellite, up to ~0.8 at the swath edge
+                "scan": _num(row.get("scan"), 3), "track": _num(row.get("track"), 3),
             })
     if errors and len(errors) == len(FIRMS_SOURCES):
         raise SourceError("; ".join(errors))
     return out
 
 
-def _num(v: Any) -> float | None:
+def _num(v: Any, digits: int = 1) -> float | None:
     try:
-        return round(float(v), 1)
+        return round(float(v), digits)
     except (TypeError, ValueError):
         return None
 

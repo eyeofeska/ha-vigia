@@ -8,7 +8,7 @@ It was built for an off-grid smallholding in the Minho, northern Portugal, and i
 
 **A fire tile** (`custom:vigia-card`): today's and tomorrow's fire risk on a five-step meter, any weather warning, a count of fires nearby, plain advice at high risk, and an alert line when something is close. A settings panel adjusts the alert distances and wind limits, runs a pretend fire, and sends a test alert. Tap the tile to open the map.
 
-**A fire map** (in the tile, or on its own as `custom:vigia-map-card`): 30 km around home with alert rings, satellite heat detections merged into smooth shapes that are bright when new and fade out by 48 hours, civil protection incidents with their status, this year's burnt areas, rivers, creeks and lakes from OpenStreetMap, wind arrows across the area, and the upwind sector shaded.
+**A fire map** (in the tile, or on its own as `custom:vigia-map-card`): 30 km around home with alert rings, satellite heat drawn as fire footprints (each ~375 m VIIRS pixel melted into one organic outline per fire, nested like growth rings: bright at the new front, fading out by 48 hours), civil protection incidents with their status, this year's burnt areas, rivers, creeks and lakes from OpenStreetMap, wind arrows across the area, and the upwind sector shaded.
 
 **Alerts** that follow three tiers, all adjustable:
 

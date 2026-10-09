@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.9";
+const VERSION = "0.1.10";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -36,6 +36,128 @@ const saveSeasons = v => { try { localStorage.setItem(BURNT_KEY, JSON.stringify(
 
 // satellite detections by age: [max hours, fill, layer opacity]
 const AGES = [[6, "#FF3B1F", 0.92], [12, "#FF7A1A", 0.72], [24, "#E8963F", 0.48], [48, "#9A7B63", 0.26]];
+// ----------------------------------------------------------------------
+// Fire footprints. Each VIIRS detection is one ~375 m pixel that holds some fire. Instead of a circle per pixel,
+// every detection adds a soft bump (sized to its real pixel) to a field; the outline is where the field crosses
+// half height, so touching pixels melt into one shape and lone ones stay small. A gentle, place-anchored warp
+// roughens the edge into lobes so it reads as a fire, not a blob. It's a drawing of where heat was seen, not a
+// mapped perimeter: the true edge can sit anywhere inside the outer pixels.
+const FP_CELL = 40;           // grid step, m
+const FP_LINK = 1200;         // detections closer than this belong to one fire
+const FP_WARP = [[300, 70], [110, 26], [45, 10]];  // edge roughness: [feature size m, shift m]
+const fpHash = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const fpNoise = (x, y, s) => {  // smooth value noise in [-1, 1], same everywhere for the same place
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = fpHash(xi, yi, s), b = fpHash(xi + 1, yi, s), c = fpHash(xi, yi + 1, s), d = fpHash(xi + 1, yi + 1, s);
+  return 2 * (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) - 1;
+};
+function fireFootprints(list, lat0) {  // lat0: a fixed latitude (home), so every band uses the same projection
+  if (!list.length) return [];
+  const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110574;
+  // place in metres (world-anchored, so the edge pattern doesn't shift between refreshes)
+  const P = list.map(h => {
+    const sc = Math.min(0.9, Math.max(0.3, h.scan || 0.375)), tr = Math.min(0.9, Math.max(0.3, h.track || 0.375));
+    return { h, x: h.lon * kx, y: h.lat * ky, sx: sc * 480, sy: tr * 480, a: 1 + 0.12 * Math.min(2, Math.max(0, Math.log10(h.frp || 1))) };
+  });
+  // group into fires
+  const root = P.map((_, i) => i), find = i => { while (root[i] !== i) i = root[i] = root[root[i]]; return i; };
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++)
+    if (Math.abs(P[i].x - P[j].x) < FP_LINK && Math.abs(P[i].y - P[j].y) < FP_LINK && Math.hypot(P[i].x - P[j].x, P[i].y - P[j].y) < FP_LINK) root[find(i)] = find(j);
+  const groups = new Map();
+  P.forEach((p, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+  const out = [];
+  for (const g of groups.values()) {
+    const pad = 3 * Math.max(...g.map(p => Math.max(p.sx, p.sy))) + 120;
+    // grid snapped to whole cells, so a band's outline always sits inside the outline of the bands beneath it
+    const x0 = Math.floor((Math.min(...g.map(p => p.x)) - pad) / FP_CELL) * FP_CELL, y0 = Math.floor((Math.min(...g.map(p => p.y)) - pad) / FP_CELL) * FP_CELL;
+    const nx = Math.ceil((Math.max(...g.map(p => p.x)) + pad - x0) / FP_CELL) + 1, ny = Math.ceil((Math.max(...g.map(p => p.y)) + pad - y0) / FP_CELL) + 1;
+    // field on a warped grid, minus the half-height threshold
+    const F = new Float32Array(nx * ny).fill(-0.5);
+    const wx = new Float32Array(nx * ny), wy = new Float32Array(nx * ny);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const X = x0 + i * FP_CELL, Y = y0 + j * FP_CELL; let dx = 0, dy = 0;
+      for (const [s, m] of FP_WARP) { dx += m * fpNoise(X / s, Y / s, 1); dy += m * fpNoise(X / s, Y / s, 2); }
+      wx[j * nx + i] = X + dx; wy[j * nx + i] = Y + dy;
+    }
+    for (const p of g) {
+      const rx = 3 * p.sx + 100, ry = 3 * p.sy + 100;
+      const i0 = Math.max(0, Math.floor((p.x - rx - x0) / FP_CELL)), i1 = Math.min(nx - 1, Math.ceil((p.x + rx - x0) / FP_CELL));
+      const j0 = Math.max(0, Math.floor((p.y - ry - y0) / FP_CELL)), j1 = Math.min(ny - 1, Math.ceil((p.y + ry - y0) / FP_CELL));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k = j * nx + i, dx = (wx[k] - p.x) / p.sx, dy = (wy[k] - p.y) / p.sy, q = dx * dx + dy * dy;
+        if (q < 9) F[k] += p.a * Math.exp(-q / 2);
+      }
+    }
+    // the border row and column stay outside, so every outline closes
+    for (let i = 0; i < nx; i++) { F[i] = -0.5; F[(ny - 1) * nx + i] = -0.5; }
+    for (let j = 0; j < ny; j++) { F[j * nx] = -0.5; F[j * nx + nx - 1] = -0.5; }
+    const rings = fpContours(F, nx, ny).map(r => fpSmooth(r).map(([i, j]) => [(y0 + j * FP_CELL) / ky, (x0 + i * FP_CELL) / kx]))
+      .filter(r => r.length > 5);
+    if (!rings.length) continue;
+    out.push({ rings, hotspots: g.map(p => p.h) });
+  }
+  return out;
+}
+// marching squares: closed outlines (grid units) where F crosses zero
+function fpContours(F, nx, ny) {
+  const T = [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], null, [[0, 2]], [[3, 2]], [[2, 3]], [[0, 2]], null, [[1, 2]], [[3, 1]], [[0, 1]], [[3, 0]], []];
+  const segs = [], at = new Map();
+  const pt = (i, j, e) => {
+    const [ai, aj, bi, bj] = e === 0 ? [i, j, i + 1, j] : e === 1 ? [i + 1, j, i + 1, j + 1] : e === 2 ? [i, j + 1, i + 1, j + 1] : [i, j, i, j + 1];
+    const va = F[aj * nx + ai], vb = F[bj * nx + bi], t = va / (va - vb);
+    return { key: e === 0 || e === 2 ? `h${ai},${aj}` : `v${ai},${aj}`, p: [ai + (bi - ai) * t, aj + (bj - aj) * t] };
+  };
+  for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = F[j * nx + i] > 0, b = F[j * nx + i + 1] > 0, c = F[(j + 1) * nx + i + 1] > 0, d = F[(j + 1) * nx + i] > 0;
+    const n = (a ? 1 : 0) | (b ? 2 : 0) | (c ? 4 : 0) | (d ? 8 : 0);
+    let list = T[n];
+    if (!list) {
+      const mid = (F[j * nx + i] + F[j * nx + i + 1] + F[(j + 1) * nx + i + 1] + F[(j + 1) * nx + i]) / 4 > 0;
+      list = n === 5 ? (mid ? [[0, 1], [2, 3]] : [[3, 0], [1, 2]]) : (mid ? [[3, 0], [1, 2]] : [[0, 1], [2, 3]]);
+    }
+    for (const [e1, e2] of list) {
+      const s = [pt(i, j, e1), pt(i, j, e2)], k = segs.push(s) - 1;
+      for (const q of s) { if (!at.has(q.key)) at.set(q.key, []); at.get(q.key).push(k); }
+    }
+  }
+  const used = new Uint8Array(segs.length), rings = [];
+  for (let k0 = 0; k0 < segs.length; k0++) {
+    if (used[k0]) continue;
+    used[k0] = 1;
+    const ring = [segs[k0][0].p]; let end = segs[k0][1];
+    for (let guard = 0; guard < segs.length; guard++) {
+      ring.push(end.p);
+      const next = (at.get(end.key) || []).find(k => !used[k]);
+      if (next == null) break;
+      used[next] = 1;
+      end = segs[next][0].key === end.key ? segs[next][1] : segs[next][0];
+    }
+    if (ring.length > 3) rings.push(ring);
+  }
+  return rings;
+}
+// Chaikin corner cutting, twice: takes the grid stair out of the outline
+function fpSmooth(r) {
+  let a = r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
+  for (let it = 0; it < 2; it++) {
+    const b = [];
+    for (let i = 0; i < a.length; i++) {
+      const p = a[i], q = a[(i + 1) % a.length];
+      b.push([0.75 * p[0] + 0.25 * q[0], 0.75 * p[1] + 0.25 * q[1]], [0.25 * p[0] + 0.75 * q[0], 0.25 * p[1] + 0.75 * q[1]]);
+    }
+    a = b;
+  }
+  return a;
+}
+const heatPopup = hs => {
+  const n = hs.length, newest = hs.reduce((a, b) => (b.age_h < a.age_h ? b : a)), oldest = Math.max(...hs.map(h => h.age_h));
+  const near = hs.reduce((a, b) => (b.distance < a.distance ? b : a)), frp = Math.max(...hs.map(h => h.frp || 0));
+  const sats = [...new Set(hs.map(h => h.sat))].join(", "), test = hs.some(h => h.test);
+  return `<b>heat detected</b>${test ? " (test)" : ""}<br>${n > 1 ? `${n} detections, ${ago(newest.age_h)}${oldest - newest.age_h >= 1 ? ` to ${ago(oldest)}` : ""}` : ago(newest.age_h)}`
+    + ` · ${esc(sats)}${frp ? ` · ${n > 1 ? "up to " : ""}${frp} MW` : ""}`
+    + `<br>${km(near.distance)} km ${esc(near.dir)} of home${hs.some(h => h.upwind) ? ", upwind" : ""}`
+    + `<br><span style="color:#777">outline drawn from ~375 m satellite pixels</span><br><a href="https://fogos.pt/" target="_blank" rel="noopener">check fogos.pt</a>`;
+};
 const FIRE_PATH = "M17.66 11.2C17.43 10.9 17.15 10.64 16.89 10.38C16.22 9.78 15.46 9.35 14.82 8.72C13.33 7.26 13 4.85 13.95 3C13 3.23 12.17 3.75 11.46 4.32C8.87 6.4 7.85 10.07 9.07 13.22C9.11 13.32 9.15 13.42 9.15 13.55C9.15 13.77 9 13.97 8.8 14.05C8.57 14.15 8.33 14.09 8.14 13.93C8.08 13.88 8.04 13.83 8 13.76C6.87 12.33 6.69 10.28 7.45 8.64C5.78 10 4.87 12.3 5 14.47C5.06 14.97 5.12 15.47 5.29 15.97C5.43 16.57 5.7 17.17 6 17.7C7.08 19.43 8.95 20.67 10.96 20.92C13.1 21.19 15.39 20.8 17.03 19.32C18.86 17.66 19.5 15 18.56 12.72L18.43 12.46C18.22 12 17.66 11.2 17.66 11.2Z";
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -359,6 +481,8 @@ class VigiaMap extends HTMLElement {
     pane("wind", 615);
     this._burnt = L.layerGroup().addTo(map);
     this._layers = L.layerGroup().addTo(map);
+    this._heatDots = L.layerGroup();
+    map.on("zoomend", () => this._dotsForZoom());
     this._seasons = loadSeasons();
     const chips = this._chips = document.createElement("div");
     chips.className = "seasons";
@@ -407,6 +531,11 @@ class VigiaMap extends HTMLElement {
     (w.k || []).forEach(c => this._wl.canals.push(L.polyline(unpack(c), { ...o, color: "#5A9BCB", dashArray: "3 3" }).addTo(g)));
     (w.r || []).forEach(rv => this._wl.rivers.push(L.polyline(unpack(rv.c), { ...o, color: "#3F86C2" }).addTo(g)));
     this._styleWater();
+  }
+  _dotsForZoom() {
+    const m = this._map, show = m.getZoom() < 12;
+    if (show && !m.hasLayer(this._heatDots)) this._heatDots.addTo(m);
+    else if (!show && m.hasLayer(this._heatDots)) m.removeLayer(this._heatDots);
   }
   _styleWater() {
     if (!this._wl) return;
@@ -482,20 +611,32 @@ class VigiaMap extends HTMLElement {
       L.polygon(pts, { pane: "sector", stroke: false, fillColor: "#F07F1A", fillOpacity: 0.13, interactive: false }).addTo(g);
     }
     this._drawBurnt();
-    // satellite heat: circles merged per age band (outline pass then fill pass in one SVG, so shared edges vanish)
-    const bands = AGES.map(() => []);
-    for (const h of d.hotspots || []) {
-      const i = AGES.findIndex(a => h.age_h <= a[0]);
-      if (i >= 0) bands[i].push(h);
-    }
-    bands.forEach((list, i) => {
+    // satellite heat: nested footprints, like growth rings. Each age band outlines every detection up to that age,
+    // so the 48 h shape is the whole fire and the newest heat sits on top of it at the front (see fireFootprints)
+    const dots = this._heatDots;
+    dots.clearLayers();
+    const heat = (d.hotspots || []).filter(h => h.age_h <= AGES[AGES.length - 1][0]);
+    AGES.forEach((age, i) => {
+      const list = heat.filter(h => h.age_h <= age[0]);
       if (!list.length) return;
-      const r = this._renderers[i], fill = AGES[i][1];
-      // each detection is a ~375 m pixel: a 330 m circle merges with its neighbours; a 5 px dot keeps it visible zoomed out
-      const shapes = (h, o) => [L.circle([h.lat, h.lon], { renderer: r, radius: 330, ...o }), L.circleMarker([h.lat, h.lon], { renderer: r, ...o, radius: 5 })];
-      list.forEach(h => shapes(h, { stroke: true, color: "#7A1A0C", weight: 3, fill: false, interactive: false }).forEach(x => x.addTo(g)));
-      list.forEach(h => shapes(h, { stroke: false, fillColor: fill, fillOpacity: 1 }).forEach(x => x.addTo(g).bindPopup(`<b>heat detected</b>${h.test ? " (test)" : ""}<br>${ago(h.age_h)} · ${esc(h.sat)}${h.frp != null ? ` · ${h.frp} MW` : ""}<br>${km(h.distance)} km ${esc(h.dir)} of home${h.upwind ? ", upwind" : ""}<br><a href="https://fogos.pt/" target="_blank" rel="noopener">check fogos.pt</a>`)));
+      const r = this._renderers[i];
+      for (const f of fireFootprints(list, d.home.lat)) {
+        // nothing older in this band: same shape as the band above, so no duplicate outline
+        if (i > 0 && f.hotspots.every(h => h.age_h <= AGES[i - 1][0])) continue;
+        L.polygon(f.rings, { renderer: r, stroke: false, fillColor: age[1], fillOpacity: 1, smoothFactor: 0.3 })
+          .addTo(g).bindPopup(heatPopup(f.hotspots));
+      }
     });
+    for (const f of fireFootprints(heat, d.home.lat)) {
+      // one dark edge around the whole fire, on top of every band
+      L.polygon(f.rings, { renderer: this._renderers[0], color: "#7A1A0C", weight: 1.6, opacity: 0.85, fill: false, interactive: false, smoothFactor: 0.3 }).addTo(g);
+      // zoomed out a footprint is a few pixels wide: a dot on its hottest new heat keeps each fire findable
+      const newest = Math.min(...f.hotspots.map(h => h.age_h)), i = Math.max(0, AGES.findIndex(a => newest <= a[0]));
+      const front = f.hotspots.filter(h => h.age_h <= AGES[i][0]).reduce((a, b) => ((b.frp || 0) > (a.frp || 0) ? b : a));
+      L.circleMarker([front.lat, front.lon], { renderer: this._renderers[0], radius: 5, color: "#7A1A0C", weight: 1.5, fillColor: AGES[i][1], fillOpacity: 1 })
+        .addTo(dots).bindPopup(heatPopup(f.hotspots));
+    }
+    this._dotsForZoom();
     // reported incidents
     for (const f of d.incidents || []) {
       const cls = f.status_code >= 3 && f.status_code <= 6 ? "active" : f.status_code === 7 ? "resolving" : "ended";

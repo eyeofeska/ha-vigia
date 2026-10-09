@@ -71,6 +71,7 @@ async def test_firms_csv(hass, aioclient_mock):
     assert len(out) == 1  # the low-confidence row is dropped
     h = out[0]
     assert h["sat"] == "NOAA-20" and h["frp"] == 8.3
+    assert h["scan"] == 0.4 and h["track"] == 0.4
     assert h["time"].startswith("2026-10-09T01:42")
 
 
