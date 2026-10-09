@@ -22,13 +22,14 @@ from .const import (
     URL_IPMA_RISK,
     URL_IPMA_WARNINGS,
     URL_OPEN_METEO,
+    VERSION,
     WARNING_RANK,
 )
 from .geo import bbox, distance_km
 
 _LOGGER = logging.getLogger(__name__)
 TIMEOUT = aiohttp.ClientTimeout(total=30)
-HEADERS = {"User-Agent": "ha-vigia (+https://github.com/eyeofeska/ha-vigia)"}
+HEADERS = {"User-Agent": f"Vigia/{VERSION.rsplit('.', 1)[0]} (https://github.com/eyeofeska/ha-vigia)"}
 
 
 class SourceError(Exception):
@@ -202,10 +203,11 @@ def _num(v: Any) -> float | None:
 
 # ---------- EFFIS burnt areas ----------
 
-def _thin_ring(ring: list) -> list:
+def _thin_ring(ring: list, swap: bool = False) -> list:
     """Round to ~10 m and drop points within ~30 m of the last kept one; burnt areas only need their outline."""
     out = []
-    for x, y, *_ in ring:
+    for a, b, *_ in ring:
+        x, y = (b, a) if swap else (a, b)
         p = [round(x, 4), round(y, 4)]
         if not out or abs(p[0] - out[-1][0]) + abs(p[1] - out[-1][1]) >= 0.0004:
             out.append(p)
@@ -214,11 +216,17 @@ def _thin_ring(ring: list) -> list:
     return out if len(out) >= 4 else []
 
 
-def _thin(geom: dict) -> dict | None:
+def _first_point(c: Any) -> list:
+    while isinstance(c, list) and c and isinstance(c[0], list):
+        c = c[0]
+    return c
+
+
+def _thin(geom: dict, swap: bool = False) -> dict | None:
     if geom["type"] == "Polygon":
-        rings = [r for r in (_thin_ring(r) for r in geom["coordinates"]) if r]
+        rings = [r for r in (_thin_ring(r, swap) for r in geom["coordinates"]) if r]
         return {"type": "Polygon", "coordinates": rings} if rings else None
-    polys = [[r for r in (_thin_ring(r) for r in poly) if r] for poly in geom["coordinates"]]
+    polys = [[r for r in (_thin_ring(r, swap) for r in poly) if r] for poly in geom["coordinates"]]
     polys = [p for p in polys if p]
     return {"type": "MultiPolygon", "coordinates": polys} if polys else None
 
@@ -227,7 +235,7 @@ async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
     """This year's burnt areas in the map square, as GeoJSON features."""
     w, s, e, n = bbox(lat, lon, radius)
     data, last = None, SourceError("no response")
-    for fmt in ("application/json", "geojson", "GEOJSON"):
+    for fmt in ("geojson", "application/json"):
         try:
             data = await _json(
                 session, URL_EFFIS, service="WFS", request="GetFeature", version="1.0.0",
@@ -249,7 +257,10 @@ async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
         geom = f.get("geometry")
         if not geom or geom.get("type") not in ("Polygon", "MultiPolygon"):
             continue
-        thin = _thin(geom)
+        # EFFIS answers EPSG:4326 in latitude, longitude order; GeoJSON wants longitude first
+        p = _first_point(geom["coordinates"])
+        swap = len(p) >= 2 and abs(p[0] - lat) + abs(p[1] - lon) < abs(p[1] - lat) + abs(p[0] - lon)
+        thin = _thin(geom, swap)
         if not thin:
             continue
         out.append({

@@ -93,3 +93,14 @@ async def test_effis_thins_and_filters_year(hass, aioclient_mock):
     out = await sources.effis(async_get_clientsession(hass), *HOME, 30)
     assert len(out) == 1 and out[0]["properties"]["area_ha"] == 140
     assert len(out[0]["geometry"]["coordinates"][0]) < 20
+    assert out[0]["geometry"]["coordinates"][0][0][0] < 0  # longitude first
+
+
+async def test_effis_swaps_lat_lon(hass, aioclient_mock):
+    from datetime import datetime
+    from custom_components.vigia.const import URL_EFFIS
+    ring = [[41.97, -8.18], [41.98, -8.18], [41.98, -8.17], [41.97, -8.17], [41.97, -8.18]]
+    aioclient_mock.get(URL_EFFIS, json={"features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]},
+                                                       "properties": {"FIREDATE": f"{datetime.now().year}-08-03 00:00:00"}}]})
+    out = await sources.effis(async_get_clientsession(hass), *HOME, 30)
+    assert out[0]["geometry"]["coordinates"][0][0] == [-8.18, 41.97]

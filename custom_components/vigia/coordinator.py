@@ -228,6 +228,8 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
         period = REFRESH[name] * 60
         if name == "fogos" and not self.opts.get(CONF_FOGOS_KEY):
             period = 15 * 60  # be gentle without a key
+        elif name == "fogos":
+            period = 10 * 60  # as agreed in the key request
         if not c.get("ok"):
             period = min(period, 5 * 60)  # retry failed sources every 5 min
         return time.time() - c.get("fetched", 0) >= period - 30

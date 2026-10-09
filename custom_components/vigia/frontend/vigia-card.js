@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.2";
+const VERSION = "0.1.3";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -288,7 +288,7 @@ class VigiaMap extends HTMLElement {
         .wind { display:flex; flex-direction:column; align-items:center; pointer-events:none; }
         .wind svg { overflow:visible; }
         .wind span { font-size:10px; font-weight:700; color:#33415C; text-shadow:0 0 3px #fff, 0 0 3px #fff; margin-top:-2px; }
-        .ringlbl { background:none; border:none; box-shadow:none; font-size:10.5px; font-weight:700; padding:0; }
+        .ringlbl { background:rgba(255,255,255,.85); border:none; border-radius:999px; box-shadow:none; font-size:10.5px; font-weight:700; padding:0 6px; line-height:16px; }
         .ringlbl::before { display:none; }
         .legend { position:absolute; left:10px; bottom:22px; z-index:500; background:rgba(255,255,255,.92); border-radius:12px; padding:8px 10px;
           font-size:11.5px; color:#333; box-shadow:0 1px 5px rgba(0,0,0,.18); line-height:1.6; max-width:200px; }
@@ -312,10 +312,13 @@ class VigiaMap extends HTMLElement {
     const L = this.L, el = this.shadowRoot.querySelector("#map");
     const map = this._map = L.map(el, { zoomControl: true, attributionControl: true, zoomSnap: 0.5 });
     map.attributionControl.setPrefix(false);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      subdomains: "abcd", maxZoom: 18, attribution: "© OpenStreetMap contributors © CARTO" }).addTo(map);
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}", {
-      maxZoom: 18, maxNativeZoom: 15, opacity: 0.32, className: "hill", attribution: "Hillshade © Esri" }).addTo(map);
+    // keyless Esri tiles: light grey base, hillshade multiplied in for terrain, place names on top
+    const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/MapServer/tile/{z}/{y}/{x}`;
+    L.tileLayer(esri("Canvas/World_Light_Gray_Base"), { maxZoom: 18, maxNativeZoom: 16, attribution: "Esri, HERE, Garmin, © OpenStreetMap contributors" }).addTo(map);
+    L.tileLayer(esri("Elevation/World_Hillshade"), { maxZoom: 18, maxNativeZoom: 16, opacity: 0.45, className: "hill", attribution: "Hillshade © Esri" }).addTo(map);
+    map.createPane("labels").style.zIndex = 380;
+    map.getPane("labels").style.pointerEvents = "none";
+    L.tileLayer(esri("Canvas/World_Light_Gray_Reference"), { pane: "labels", maxZoom: 18, maxNativeZoom: 16 }).addTo(map);
     map.attributionControl.addAttribution("Fires: NASA FIRMS, fogos.pt/ANEPC · Burnt areas: EFFIS © Copernicus · Risk: IPMA · Wind: Open-Meteo");
     const pane = (name, z, op) => { const p = map.createPane(name); p.style.zIndex = z; if (op != null) p.style.opacity = op; return p; };
     pane("burnt", 340); pane("sector", 345); pane("rings", 350);
