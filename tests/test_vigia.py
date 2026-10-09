@@ -195,3 +195,22 @@ async def test_fogos_key_is_sent(hass, aioclient_mock):
     aioclient_mock.get(URL_FOGOS, json={"success": True, "data": []})
     await sources.fogos(async_get_clientsession(hass), *HOME, 30, "abc")
     assert aioclient_mock.mock_calls[0][3]["X-API-Key"] == "abc"
+
+
+async def test_card_resource_registered_and_versioned(hass, feeds, fake_frontend):
+    from homeassistant.components.lovelace.const import LOVELACE_DATA
+    from custom_components.vigia import _register_resource
+    from custom_components.vigia.const import VERSION
+
+    await _setup(hass)
+    res = hass.data[LOVELACE_DATA].resources
+    urls = [r["url"] for r in res.async_items()]
+    assert urls == [f"/vigia_static/vigia-card.js?v={VERSION}"]
+    fake_frontend.assert_not_called()  # no per-page script once it's a resource
+
+    # an older version (and a stray duplicate) are folded into one current entry
+    item = res.async_items()[0]
+    await res.async_update_item(item["id"], {"res_type": "module", "url": "/vigia_static/vigia-card.js?v=0.0.1"})
+    await res.async_create_item({"res_type": "module", "url": "/vigia_static/vigia-card.js?v=0.0.2"})
+    assert await _register_resource(hass)
+    assert [r["url"] for r in res.async_items()] == [f"/vigia_static/vigia-card.js?v={VERSION}"]

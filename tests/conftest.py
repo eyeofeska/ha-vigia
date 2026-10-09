@@ -65,5 +65,6 @@ async def fake_frontend(hass):
 
     hass.config.components.add("frontend")
     await async_setup_component(hass, "http", {})
+    await async_setup_component(hass, "lovelace", {})
     with patch("custom_components.vigia.add_extra_js_url") as js:
         yield js

@@ -42,7 +42,7 @@ Everything is fetched by Home Assistant and kept, so the tile, map and alerts ca
    - **NASA FIRMS map key** (optional, free): request one at [firms.modaps.eosdis.nasa.gov/api/map_key](https://firms.modaps.eosdis.nasa.gov/api/map_key). Without it you get IPMA and fogos.pt only. The key stays in Home Assistant.
    - **Weather entity**: the one used for wind at home (e.g. `weather.forecast_home`).
    - Home comes from Home Assistant unless you set a latitude and longitude.
-4. Add the tile to a dashboard: `type: custom:vigia-card`. The card is registered automatically; there is no resource to add. Hard-refresh the browser once after installing or updating.
+4. Add the tile to a dashboard: `type: custom:vigia-card`. Vigia adds its card as a dashboard resource and moves it to the new version on each update, so phones and tablets pick up changes on their next load. (With dashboards kept in YAML it loads the card with every page instead; hard-refresh after updates.)
 5. Set up alerts: **Settings › Automations › Blueprints › Vigia fire alert › Create automation.** Choose the phones and a light to flash. The blueprint is copied into your config the first time Vigia starts.
 
 ### Card options
