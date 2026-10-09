@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.4";
+const VERSION = "0.1.5";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -270,6 +270,7 @@ class VigiaMap extends HTMLElement {
         :host { display:block; position:relative; height:100%; min-height:240px; font-family:'Lato',sans-serif; }
         #map { position:absolute; inset:0; background:#E9E5DC; border-radius:inherit; }
         .msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:13px; text-align:center; padding:20px; }
+        .msg[hidden] { display:none; }  /* without this the empty message layer covers the map and eats every touch */
         .leaflet-container { font-family:'Lato',sans-serif; }
         .hill { mix-blend-mode:multiply; }
         .leaflet-popup-content { font-size:13px; line-height:1.45; margin:10px 12px; }
@@ -436,9 +437,9 @@ class VigiaMapDialog extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>
-        :host { position:fixed; inset:0; z-index:9999; display:none; font-family:'Lato',sans-serif; }
+        :host { position:fixed; inset:0; z-index:9999; display:none; font-family:'Lato',sans-serif; overscroll-behavior:contain; }
         :host([open]) { display:block; }
-        .bg { position:absolute; inset:0; background:rgba(0,0,0,.45); }
+        .bg { position:absolute; inset:0; background:rgba(0,0,0,.45); touch-action:none; }
         .box { position:absolute; inset:max(16px, 3vh) max(16px, 3vw); background:var(--card-background-color, #fff); border-radius:20px; overflow:hidden;
           display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35); }
         @media (max-width: 600px) { .box { inset:0; border-radius:0; } }
