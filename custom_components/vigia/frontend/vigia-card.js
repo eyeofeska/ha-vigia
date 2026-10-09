@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.7";
+const VERSION = "0.1.8";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -52,6 +52,16 @@ const hub = {
     if (this.data || this.error) fn();
   },
   detach(fn) { this.listeners.delete(fn); },
+  water() {
+    if (!this.conn) return Promise.resolve(null);
+    if (this._water && this._waterConn === this.conn) return this._water;
+    this._waterConn = this.conn;
+    this._water = this.conn.sendMessagePromise({ type: "vigia/water" }).then(r => {
+      if (!r || !r.data) { this._water = null; return r && r.info && r.info.pending ? new Promise(ok => setTimeout(() => ok(this.water()), 60000)) : null; }
+      return r.data;
+    }).catch(() => { this._water = null; return null; });
+    return this._water;
+  },
   emit() { this.listeners.forEach(f => { try { f(); } catch (e) { console.error(e); } }); },
 };
 
@@ -321,9 +331,11 @@ class VigiaMap extends HTMLElement {
     map.createPane("labels").style.zIndex = 380;
     map.getPane("labels").style.pointerEvents = "none";
     L.tileLayer(esri("Canvas/World_Light_Gray_Reference"), { pane: "labels", maxZoom: 18, maxNativeZoom: 16 }).addTo(map);
-    map.attributionControl.addAttribution("Fires: NASA FIRMS, fogos.pt/ANEPC · Burnt areas: EFFIS © Copernicus · Risk: IPMA · Wind: Open-Meteo");
+    map.attributionControl.addAttribution("Fires: NASA FIRMS, fogos.pt/ANEPC · Burnt areas: EFFIS © Copernicus · Water: © OpenStreetMap contributors · Risk: IPMA · Wind: Open-Meteo");
     const pane = (name, z, op) => { const p = map.createPane(name); p.style.zIndex = z; if (op != null) p.style.opacity = op; return p; };
-    pane("burnt", 340); pane("sector", 345); pane("rings", 350);
+    pane("water", 330); pane("burnt", 340); pane("sector", 345); pane("rings", 350);
+    this._water = L.layerGroup().addTo(map);
+    map.on("zoomend", () => this._styleWater());
     AGES.forEach((a, i) => pane("age" + i, 409 - i, a[2]));
     pane("wind", 615);
     this._layers = L.layerGroup().addTo(map);
@@ -334,6 +346,7 @@ class VigiaMap extends HTMLElement {
       <div class="r"><span class="ages">${AGES.map(a => `<i style="background:${a[1]};opacity:${Math.max(.35, a[2])}"></i>`).join("")}</span>heat, new → 48 h</div>
       <div class="r"><i style="background:#E0402C"></i>reported fire (fogos.pt)</div>
       <div class="r"><i style="background:#4A3426;opacity:.5;border-radius:3px"></i>burnt this year</div>
+      <div class="r"><i style="background:#3F86C2;height:3px;border-radius:2px"></i>rivers and creeks</div>
       <div class="r"><i style="background:#F07F1A;opacity:.25;border-radius:3px"></i>upwind sector</div>
       <div class="r"><i style="border:2px dashed #E0402C;box-sizing:border-box"></i>alert rings</div></div>`;
     legend.querySelector(".tog").addEventListener("click", () => {
@@ -344,9 +357,40 @@ class VigiaMap extends HTMLElement {
     this.shadowRoot.appendChild(legend);
   }
 
+  // rivers, creeks, canals and lakes from OpenStreetMap, drawn once on a canvas (thousands of lines)
+  _drawWater(w) {
+    const L = this.L, map = this._map;
+    if (!w || !L || !map || this._waterDrawn) return;
+    this._waterDrawn = true;
+    const [la0, lo0] = w.o;
+    const unpack = f => { const out = []; let a = Math.round(la0 * 1e4), b = Math.round(lo0 * 1e4);
+      for (let i = 0; i < f.length; i += 2) { a += f[i]; b += f[i + 1]; out.push([a / 1e4, b / 1e4]); } return out; };
+    const r = L.canvas({ pane: "water", padding: 0.3 });
+    const g = this._water, o = { renderer: r, interactive: false, lineCap: "round", lineJoin: "round" };
+    this._wl = { areas: [], streams: [], canals: [], rivers: [] };
+    (w.a || []).forEach(p => this._wl.areas.push(L.polygon(p.map(unpack), { ...o, color: "#4F8FC0", fillColor: "#8FC3E6" }).addTo(g)));
+    (w.s || []).forEach(c => this._wl.streams.push(L.polyline(unpack(c), { ...o, color: "#5A9BCB" }).addTo(g)));
+    (w.k || []).forEach(c => this._wl.canals.push(L.polyline(unpack(c), { ...o, color: "#5A9BCB", dashArray: "3 3" }).addTo(g)));
+    (w.r || []).forEach(rv => this._wl.rivers.push(L.polyline(unpack(rv.c), { ...o, color: "#3F86C2" }).addTo(g)));
+    this._styleWater();
+  }
+  _styleWater() {
+    if (!this._wl) return;
+    const z = this._map.getZoom(), t = Math.max(0, Math.min(1, (z - 9.5) / 4));  // 0 zoomed out .. 1 close in
+    const lerp = (a, b) => a + (b - a) * t;
+    this._wl.rivers.forEach(l => l.setStyle({ weight: lerp(1.3, 3.2), opacity: lerp(0.75, 0.95) }));
+    this._wl.streams.forEach(l => l.setStyle({ weight: lerp(0.6, 1.5), opacity: lerp(0.4, 0.85) }));
+    this._wl.canals.forEach(l => l.setStyle({ weight: lerp(0.6, 1.3), opacity: lerp(0.35, 0.75) }));
+    this._wl.areas.forEach(l => l.setStyle({ weight: lerp(0.5, 1), opacity: 0.7, fillOpacity: lerp(0.75, 0.85) }));
+  }
+
   _draw() {
     const d = this._d, L = this.L, map = this._map;
     if (!d || !L || !map) return;
+    if (!this._waterDrawn && !this._waterAsking) {
+      this._waterAsking = true;
+      hub.water().then(w => { this._waterAsking = false; this._drawWater(w); });
+    }
     const g = this._layers;
     g.clearLayers();
     const home = [d.home.lat, d.home.lon], s = d.settings;

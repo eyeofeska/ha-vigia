@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import CARD_FILE, DOMAIN, STATIC_URL, VERSION
 from .coordinator import VigiaCoordinator
+from .water import Waterways
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH, Platform.BUTTON]
@@ -37,6 +38,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         # dashboards kept in YAML: fall back to loading the card with every page
         add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_water)
     return True
 
 
@@ -99,6 +101,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
     hass.data[DOMAIN] = coordinator
     coordinator.start_listeners()
+    coordinator.water = Waterways(hass, entry.entry_id)
+    await coordinator.water.async_load()
+    coordinator.water.maybe_refresh(*coordinator.home, coordinator.radius)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     await hass.async_add_executor_job(_install_blueprint, hass.config.path("blueprints", "automation", DOMAIN))
@@ -156,3 +161,16 @@ async def ws_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConn
     connection.subscriptions[msg["id"]] = coordinator.async_add_listener(push)
     connection.send_result(msg["id"])
     push()
+
+
+@websocket_api.websocket_command({vol.Required("type"): "vigia/water"})
+@websocket_api.async_response
+async def ws_water(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """Rivers, creeks and lakes for the map, asked for once when the map opens."""
+    coordinator: VigiaCoordinator | None = hass.data.get(DOMAIN)
+    water = getattr(coordinator, "water", None)
+    if water is None:
+        connection.send_error(msg["id"], "not_loaded", "Vigia is not set up")
+        return
+    water.maybe_refresh(*coordinator.home, coordinator.radius)
+    connection.send_result(msg["id"], {"data": water.data, "info": water.info()})

@@ -30,4 +30,5 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "wind_grid_points": len(d.get("wind_grid") or []),
         "alerted_fires": len(c.alerted),
         "test_mode": c.test_mode,
+        "waterways": c.water.info() if c.water else None,
     }

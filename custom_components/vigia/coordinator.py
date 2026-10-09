@@ -72,6 +72,7 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
         self._fake: dict[str, list] = {"hotspots": [], "incidents": []}
         self._unsub_weather = None
         self._recompute_pending = None
+        self.water = None  # Waterways, set up by async_setup_entry
 
     # ---------- config ----------
     @property

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "vigia"
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 EVENT_ALERT = "vigia_alert"
 STATIC_URL = "/vigia_static"
