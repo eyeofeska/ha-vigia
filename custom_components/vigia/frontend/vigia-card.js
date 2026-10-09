@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.8";
+const VERSION = "0.1.9";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
@@ -23,6 +23,17 @@ const SETTING_ORDER = [
   ["wind_angle", "wind angle", "counts as from the fire"], ["min_wind", "upwind wind", "at least"], ["watch_wind", "watch wind", "at least"],
 ];
 const SOURCE_NAMES = { ipma_risk: "IPMA risk", ipma_warnings: "IPMA warnings", fogos: "fogos.pt", firms: "NASA FIRMS", effis: "EFFIS", wind: "Open-Meteo wind" };
+// burnt areas by season, newest first: this year, last season, the season before (older ones fade and get a dashed edge)
+const BURNT = [
+  { fill: "#4A3426", fillOpacity: 0.3, color: "#5B4030", opacity: 0.65, dash: null },
+  { fill: "#9A5B2E", fillOpacity: 0.24, color: "#8A4F26", opacity: 0.6, dash: null },
+  { fill: "#C9A46E", fillOpacity: 0.26, color: "#A9814A", opacity: 0.7, dash: "4 3" },
+];
+const swatch = b => `background:${b.fill};border:1.5px ${b.dash ? "dashed" : "solid"} ${b.color};border-radius:3px`;
+const BURNT_KEY = "vigia:burnt-seasons";  // which seasons are shown, by offset from this year; per device
+const loadSeasons = () => { try { const v = JSON.parse(localStorage.getItem(BURNT_KEY)); if (Array.isArray(v)) return v; } catch (e) { /* no storage */ } return [0]; };
+const saveSeasons = v => { try { localStorage.setItem(BURNT_KEY, JSON.stringify(v)); } catch (e) { /* no storage */ } };
+
 // satellite detections by age: [max hours, fill, layer opacity]
 const AGES = [[6, "#FF3B1F", 0.92], [12, "#FF7A1A", 0.72], [24, "#E8963F", 0.48], [48, "#9A7B63", 0.26]];
 const FIRE_PATH = "M17.66 11.2C17.43 10.9 17.15 10.64 16.89 10.38C16.22 9.78 15.46 9.35 14.82 8.72C13.33 7.26 13 4.85 13.95 3C13 3.23 12.17 3.75 11.46 4.32C8.87 6.4 7.85 10.07 9.07 13.22C9.11 13.32 9.15 13.42 9.15 13.55C9.15 13.77 9 13.97 8.8 14.05C8.57 14.15 8.33 14.09 8.14 13.93C8.08 13.88 8.04 13.83 8 13.76C6.87 12.33 6.69 10.28 7.45 8.64C5.78 10 4.87 12.3 5 14.47C5.06 14.97 5.12 15.47 5.29 15.97C5.43 16.57 5.7 17.17 6 17.7C7.08 19.43 8.95 20.67 10.96 20.92C13.1 21.19 15.39 20.8 17.03 19.32C18.86 17.66 19.5 15 18.56 12.72L18.43 12.46C18.22 12 17.66 11.2 17.66 11.2Z";
@@ -310,6 +321,14 @@ class VigiaMap extends HTMLElement {
         .legend .ages i { width:10px; height:10px; }
         .legend.min .full { display:none; }
         .legend .tog { cursor:pointer; font-weight:700; }
+        .seasons { position:absolute; right:10px; top:10px; z-index:500; display:flex; align-items:center; gap:4px; background:rgba(255,255,255,.92);
+          border-radius:999px; padding:4px 5px 4px 10px; box-shadow:0 1px 5px rgba(0,0,0,.18); font-size:11.5px; color:#333; }
+        .seasons .lbl { font-weight:700; margin-right:2px; }
+        .seasons button { all:unset; cursor:pointer; display:flex; align-items:center; gap:5px; padding:3px 9px 3px 6px; border-radius:999px;
+          font-weight:700; color:#999; -webkit-tap-highlight-color:transparent; }
+        .seasons button i { width:11px; height:11px; border-radius:3px; box-sizing:border-box; opacity:.35; }
+        .seasons button.on { color:#333; background:rgba(74,52,38,.1); }
+        .seasons button.on i { opacity:1; }
       </style>
       <div id="map"></div><div class="msg" hidden></div>`;
   }
@@ -338,14 +357,29 @@ class VigiaMap extends HTMLElement {
     map.on("zoomend", () => this._styleWater());
     AGES.forEach((a, i) => pane("age" + i, 409 - i, a[2]));
     pane("wind", 615);
+    this._burnt = L.layerGroup().addTo(map);
     this._layers = L.layerGroup().addTo(map);
+    this._seasons = loadSeasons();
+    const chips = this._chips = document.createElement("div");
+    chips.className = "seasons";
+    chips.addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      const k = +b.dataset.k;
+      this._seasons = this._seasons.includes(k) ? this._seasons.filter(x => x !== k) : [...this._seasons, k].sort();
+      saveSeasons(this._seasons);
+      this._drawBurnt(true);
+    });
+    L.DomEvent.disableClickPropagation(chips);
+    L.DomEvent.disableScrollPropagation(chips);
+    this.shadowRoot.appendChild(chips);
     this._renderers = AGES.map((a, i) => L.svg({ pane: "age" + i, padding: 0.5 }));
     const legend = document.createElement("div");
     legend.className = "legend min";
     legend.innerHTML = `<div class="r tog">legend ▴</div><div class="full">
       <div class="r"><span class="ages">${AGES.map(a => `<i style="background:${a[1]};opacity:${Math.max(.35, a[2])}"></i>`).join("")}</span>heat, new → 48 h</div>
       <div class="r"><i style="background:#E0402C"></i>reported fire (fogos.pt)</div>
-      <div class="r"><i style="background:#4A3426;opacity:.5;border-radius:3px"></i>burnt this year</div>
+      <div class="r"><span class="ages">${BURNT.map(b => `<i style="${swatch(b)}"></i>`).join("")}</span>burnt, newest → oldest</div>
       <div class="r"><i style="background:#3F86C2;height:3px;border-radius:2px"></i>rivers and creeks</div>
       <div class="r"><i style="background:#F07F1A;opacity:.25;border-radius:3px"></i>upwind sector</div>
       <div class="r"><i style="border:2px dashed #E0402C;box-sizing:border-box"></i>alert rings</div></div>`;
@@ -384,6 +418,37 @@ class VigiaMap extends HTMLElement {
     this._wl.areas.forEach(l => l.setStyle({ weight: lerp(0.5, 1), opacity: 0.7, fillOpacity: lerp(0.75, 0.85) }));
   }
 
+  // burnt areas, one season per toggle chip; only redrawn when the data or the chosen seasons change
+  _drawBurnt(force) {
+    const d = this._d, L = this.L;
+    if (!d || !L || !this._burnt) return;
+    const years = d.burnt_years || [new Date(d.computed || Date.now()).getFullYear()];
+    const feats = d.burnt || [];
+    const key = JSON.stringify([years, feats.length, feats.length && feats[0].properties, this._seasons]);
+    if (!force && key === this._burntKey) return;
+    this._burntKey = key;
+    const ha = years.map(y => feats.filter(f => (f.properties.year || years[0]) === y).reduce((a, f) => a + (+f.properties.area_ha || 0), 0));
+    this._chips.innerHTML = `<span class="lbl">burnt</span>` + years.map((y, k) =>
+      `<button data-k="${k}" class="${this._seasons.includes(k) ? "on" : ""}" title="${Math.round(ha[k]).toLocaleString()} ha burnt in ${y} on this map">
+        <i style="${swatch(BURNT[k] || BURNT[BURNT.length - 1])}"></i>${y}</button>`).join("");
+    const g = this._burnt;
+    g.clearLayers();
+    // oldest first, so newer burns sit on top where land burnt again
+    for (let k = years.length - 1; k >= 0; k--) {
+      if (!this._seasons.includes(k)) continue;
+      const y = years[k], st = BURNT[k] || BURNT[BURNT.length - 1];
+      const list = feats.filter(f => (f.properties.year || years[0]) === y);
+      if (!list.length) continue;
+      L.geoJSON({ type: "FeatureCollection", features: list }, {
+        pane: "burnt",
+        style: { color: st.color, weight: 1, opacity: st.opacity, dashArray: st.dash, fillColor: st.fill, fillOpacity: st.fillOpacity },
+        onEachFeature: (f, l) => l.bindPopup(`<b>burnt ${k === 0 ? "this year" : `in ${y}`}</b><br>${esc(f.properties.date || "")}`
+          + `${f.properties.area_ha ? ` · ${Math.round(f.properties.area_ha)} ha` : ""}${f.properties.place ? `<br>${esc(f.properties.place)}` : ""}`
+          + `<br><span style="color:#777">EFFIS © Copernicus</span>`),
+      }).addTo(g);
+    }
+  }
+
   _draw() {
     const d = this._d, L = this.L, map = this._map;
     if (!d || !L || !map) return;
@@ -416,13 +481,7 @@ class VigiaMap extends HTMLElement {
       }
       L.polygon(pts, { pane: "sector", stroke: false, fillColor: "#F07F1A", fillOpacity: 0.13, interactive: false }).addTo(g);
     }
-    // burnt areas
-    if (d.burnt && d.burnt.length) {
-      L.geoJSON({ type: "FeatureCollection", features: d.burnt }, {
-        pane: "burnt", style: { color: "#5B4030", weight: 1, opacity: 0.6, fillColor: "#4A3426", fillOpacity: 0.28 },
-        onEachFeature: (f, l) => l.bindPopup(`<b>burnt area</b><br>${esc(f.properties.date || "")}${f.properties.area_ha ? ` · ${Math.round(f.properties.area_ha)} ha` : ""}<br><span style="color:#777">EFFIS © Copernicus</span>`),
-      }).addTo(g);
-    }
+    this._drawBurnt();
     // satellite heat: circles merged per age band (outline pass then fill pass in one SVG, so shared edges vanish)
     const bands = AGES.map(() => []);
     for (const h of d.hotspots || []) {

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "vigia"
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 
 EVENT_ALERT = "vigia_alert"
 STATIC_URL = "/vigia_static"
@@ -74,6 +74,9 @@ URL_IPMA_WARNINGS = "https://api.ipma.pt/open-data/forecast/warnings/warnings_ww
 URL_FOGOS = "https://api.fogos.pt/new/fires"
 URL_FIRMS = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{source}/{bbox}/2"
 URL_FIRMS_STATUS = "https://firms.modaps.eosdis.nasa.gov/mapserver/mapkey_status/?MAP_KEY={key}"
+# burnt areas: this year plus the two fire seasons before it
+BURNT_SEASONS = 3
+
 URL_EFFIS = "https://maps.effis.emergency.copernicus.eu/effis"
 URL_OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 URL_FOGOS_FIRE = "https://fogos.pt/fogo/{id}"

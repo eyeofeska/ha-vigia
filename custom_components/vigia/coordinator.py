@@ -20,6 +20,7 @@ from .const import (
     ALERT_MAX_AGE_H,
     CLOSER_BY_KM,
     CONF_CONCELHO,
+    BURNT_SEASONS,
     CONF_EFFIS,
     CONF_FOGOS,
     CONF_FOGOS_KEY,
@@ -354,6 +355,7 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
             "hotspots": sorted(hotspots, key=lambda h: h["distance"]),
             "incidents": sorted(incidents, key=lambda i: i["distance"]),
             "burnt": (self.cache.get("effis") or {}).get("data") or [],
+            "burnt_years": [now.year - i for i in range(BURNT_SEASONS)],
             "wind_grid": (self.cache.get("wind") or {}).get("data") or [],
             "alert": {
                 "tier": top["tier"] if top else "none",

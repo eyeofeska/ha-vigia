@@ -26,6 +26,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "counts": d.get("counts"),
         "burnt_areas": len(d.get("burnt") or []),
         "burnt_dates": sorted({f["properties"].get("date", "")[:7] for f in d.get("burnt") or []}),
+        "burnt_per_year": {y: sum(1 for f in d.get("burnt") or [] if f["properties"].get("year") == y) for y in d.get("burnt_years") or []},
         "burnt_vertices": sum(len(str(f["geometry"]["coordinates"])) // 20 for f in d.get("burnt") or []),
         "wind_grid_points": len(d.get("wind_grid") or []),
         "alerted_fires": len(c.alerted),

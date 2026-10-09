@@ -14,6 +14,7 @@ from .const import (
     FIRMS_SOURCES,
     FOGOS_ACTIVE,
     RISK_NAMES,
+    BURNT_SEASONS,
     URL_EFFIS,
     URL_FIRMS,
     URL_FIRMS_STATUS,
@@ -231,8 +232,8 @@ def _thin(geom: dict, swap: bool = False) -> dict | None:
     return {"type": "MultiPolygon", "coordinates": polys} if polys else None
 
 
-async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
-    """This year's burnt areas in the map square, as GeoJSON features."""
+async def effis(session, lat: float, lon: float, radius: float, seasons: int = BURNT_SEASONS) -> list[dict]:
+    """Burnt areas in the map square from this year and the seasons before it, as GeoJSON features tagged with their year."""
     w, s, e, n = bbox(lat, lon, radius)
     data, last = None, SourceError("no response")
     for fmt in ("geojson", "application/json"):
@@ -247,12 +248,17 @@ async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
             last = err
     if data is None:
         raise last
-    year = str(datetime.now().year)
+    this_year = datetime.now().year
     out = []
     for f in data.get("features") or []:
         props = {k.lower(): v for k, v in (f.get("properties") or {}).items()}
+        # FIREDATE is when the fire started; LASTUPDATE is when EFFIS last touched the record, so it is only a fallback
         date = str(props.get("firedate") or props.get("lastupdate") or "")
-        if not date.startswith(year) and year not in date[:10]:
+        try:
+            year = int(date[:4])
+        except ValueError:
+            continue
+        if not this_year - seasons < year <= this_year:
             continue
         geom = f.get("geometry")
         if not geom or geom.get("type") not in ("Polygon", "MultiPolygon"):
@@ -266,7 +272,7 @@ async def effis(session, lat: float, lon: float, radius: float) -> list[dict]:
         out.append({
             "type": "Feature",
             "geometry": thin,
-            "properties": {"date": date[:10], "area_ha": _num(props.get("area_ha")), "place": props.get("commune") or props.get("province")},
+            "properties": {"date": date[:10], "year": year, "area_ha": _num(props.get("area_ha")), "place": props.get("commune") or props.get("province")},
         })
     return out
 

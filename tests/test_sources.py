@@ -88,10 +88,13 @@ async def test_effis_thins_and_filters_year(hass, aioclient_mock):
     feats = [
         {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y}-08-12 00:00:00", "AREA_HA": 140}},
         {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y - 1}-08-12 00:00:00", "AREA_HA": 99}},
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y - 2}-07-02 00:00:00", "AREA_HA": 55}},
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"FIREDATE": f"{y - 3}-08-12 00:00:00", "AREA_HA": 77}},
     ]
     aioclient_mock.get(URL_EFFIS, json={"type": "FeatureCollection", "features": feats})
     out = await sources.effis(async_get_clientsession(hass), *HOME, 30)
-    assert len(out) == 1 and out[0]["properties"]["area_ha"] == 140
+    # this year and the two seasons before it, each tagged with its year; older seasons dropped
+    assert [(f["properties"]["year"], f["properties"]["area_ha"]) for f in out] == [(y, 140), (y - 1, 99), (y - 2, 55)]
     assert len(out[0]["geometry"]["coordinates"][0]) < 20
     assert out[0]["geometry"]["coordinates"][0][0][0] < 0  # longitude first
 
