@@ -214,3 +214,25 @@ async def test_card_resource_registered_and_versioned(hass, feeds, fake_frontend
     await res.async_create_item({"res_type": "module", "url": "/vigia_static/vigia-card.js?v=0.0.2"})
     assert await _register_resource(hass)
     assert [r["url"] for r in res.async_items()] == [f"/vigia_static/vigia-card.js?v={VERSION}"]
+
+
+async def test_concelho_override_and_home_change(hass, feeds):
+    from unittest.mock import patch
+    seen = []
+
+    async def risk(session, lat, lon, dico):
+        seen.append(dico)
+        return {**feeds["risk"], "dico": dico or "1606"}
+
+    with patch("custom_components.vigia.sources.ipma_risk", risk):
+        entry = await _setup(hass, ipma_concelho="1601", latitude=41.826715, longitude=-8.344605)
+    assert seen[0] == "1601"
+    assert entry.runtime_data.home == (41.826715, -8.344605)
+    assert hass.states.get("sensor.vigia_fire_risk").attributes["concelho_code"] == "1601"
+
+
+async def test_bad_concelho_rejected(hass, feeds):
+    from homeassistant import config_entries
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    r2 = await hass.config_entries.flow.async_configure(r["flow_id"], {"radius_km": 30, "use_fogos": True, "use_effis": True, "ipma_concelho": "Arcos"})
+    assert r2["errors"] == {"ipma_concelho": "bad_concelho"}

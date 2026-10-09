@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Vigia wildfire watch",
-        "description": "Fire risk and warnings come from IPMA, incidents from fogos.pt. fogos.pt asks each user for their own free API key (request one at fogos.pt/en/api); without it Vigia polls gently and may be rate limited. Add a free NASA FIRMS map key (firms.modaps.eosdis.nasa.gov/api/map_key) to include satellite hotspots. Home comes from Home Assistant unless you set a latitude and longitude.",
+        "description": "Fire risk and warnings come from IPMA, incidents from fogos.pt. fogos.pt asks each user for their own free API key (request one at fogos.pt/en/api); without it Vigia polls gently and may be rate limited. Add a free NASA FIRMS map key (firms.modaps.eosdis.nasa.gov/api/map_key) to include satellite hotspots. Home comes from Home Assistant unless you set a latitude and longitude. Fire risk is read for the concelho whose centre is nearest; if you live near a border, set your concelho's 4-digit code.",
         "data": {
           "map_key": "NASA FIRMS map key (optional)",
           "weather_entity": "Weather entity for wind at home",
@@ -12,13 +12,15 @@
           "use_effis": "Show EFFIS burnt areas",
           "latitude": "Latitude override",
           "longitude": "Longitude override",
-          "fogos_key": "fogos.pt API key (optional)"
+          "fogos_key": "fogos.pt API key (optional)",
+          "ipma_concelho": "IPMA concelho code (optional, e.g. 1601)"
         }
       }
     },
     "error": {
       "invalid_key": "NASA FIRMS did not accept this map key.",
-      "both_coords": "Set both latitude and longitude, or neither."
+      "both_coords": "Set both latitude and longitude, or neither.",
+      "bad_concelho": "Use the 4-digit IPMA concelho code (DICO), e.g. 1601 for Arcos de Valdevez."
     },
     "abort": {
       "single_instance_allowed": "Vigia is already set up."
@@ -37,13 +39,15 @@
           "use_effis": "Show EFFIS burnt areas",
           "latitude": "Latitude override",
           "longitude": "Longitude override",
-          "fogos_key": "fogos.pt API key (optional)"
+          "fogos_key": "fogos.pt API key (optional)",
+          "ipma_concelho": "IPMA concelho code (optional, e.g. 1601)"
         }
       }
     },
     "error": {
       "invalid_key": "NASA FIRMS did not accept this map key.",
-      "both_coords": "Set both latitude and longitude, or neither."
+      "both_coords": "Set both latitude and longitude, or neither.",
+      "bad_concelho": "Use the 4-digit IPMA concelho code (DICO), e.g. 1601 for Arcos de Valdevez."
     }
   }
 }

@@ -19,6 +19,7 @@ from . import sources
 from .const import (
     ALERT_MAX_AGE_H,
     CLOSER_BY_KM,
+    CONF_CONCELHO,
     CONF_EFFIS,
     CONF_FOGOS,
     CONF_FOGOS_KEY,
@@ -88,6 +89,9 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
     def radius(self) -> float:
         return float(self.opts.get(CONF_RADIUS) or DEFAULT_RADIUS)
 
+    def _place(self) -> list:
+        return [*self.home, self.radius, self.opts.get(CONF_CONCELHO) or ""]
+
     def _enabled(self, name: str) -> bool:
         o = self.opts
         if name == "firms":
@@ -107,8 +111,10 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
                 self.settings[k] = float(v)
         self.alerted = [a for a in stored.get("alerted") or [] if not a.get("test")]
         # a changed home or radius makes cached positions meaningless for the map square
-        if stored.get("home") != [*self.home, self.radius]:
-            for name in ("fogos", "firms", "effis", "wind"):
+        if stored.get("home") != self._place():
+            # a new home, radius or concelho makes every cached position and the chosen concelho stale
+            self.alerted = []
+            for name in ("ipma_risk", "ipma_warnings", "fogos", "firms", "effis", "wind"):
                 self.cache.pop(name, None)
         now = time.time()
         for c in self.cache.values():
@@ -118,7 +124,7 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
     def _save(self) -> None:
         self._store.async_delay_save(lambda: {
             "cache": self.cache, "settings": self.settings,
-            "alerted": [a for a in self.alerted if not a.get("test")], "home": [*self.home, self.radius],
+            "alerted": [a for a in self.alerted if not a.get("test")], "home": self._place(),
         }, 10)
 
     # ---------- wind at home ----------
@@ -186,7 +192,8 @@ class VigiaCoordinator(DataUpdateCoordinator[dict]):
         c["fetched"] = time.time()
         try:
             if name == "ipma_risk":
-                data = await sources.ipma_risk(self.session, lat, lon, (c.get("data") or {}).get("dico"))
+                dico = self.opts.get(CONF_CONCELHO) or (c.get("data") or {}).get("dico")
+                data = await sources.ipma_risk(self.session, lat, lon, dico)
             elif name == "ipma_warnings":
                 dico = ((self.cache.get("ipma_risk") or {}).get("data") or {}).get("dico")
                 area = WARNING_AREAS.get((dico or "")[:2])

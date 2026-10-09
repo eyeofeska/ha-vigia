@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "vigia"
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 
 EVENT_ALERT = "vigia_alert"
 STATIC_URL = "/vigia_static"
@@ -17,6 +17,7 @@ CONF_RADIUS = "radius_km"
 CONF_FOGOS = "use_fogos"
 CONF_FOGOS_KEY = "fogos_key"
 CONF_EFFIS = "use_effis"
+CONF_CONCELHO = "ipma_concelho"
 
 DEFAULT_RADIUS = 30
 

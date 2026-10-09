@@ -12,6 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import sources
 from .const import (
+    CONF_CONCELHO,
     CONF_EFFIS,
     CONF_FOGOS,
     CONF_FOGOS_KEY,
@@ -51,6 +52,7 @@ def _schema(hass: HomeAssistant, d: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_LONGITUDE, description={"suggested_value": d.get(CONF_LONGITUDE)}): selector.NumberSelector(
             selector.NumberSelectorConfig(min=-180, max=180, step="any", mode=selector.NumberSelectorMode.BOX)
         ),
+        vol.Optional(CONF_CONCELHO, description={"suggested_value": d.get(CONF_CONCELHO)}): selector.TextSelector(),
     }
     return vol.Schema(fields)
 
@@ -65,6 +67,9 @@ async def _validate(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, str]
             errors[CONF_MAP_KEY] = "invalid_key"
         except sources.SourceError:
             pass  # offline right now (Starlink asleep, say): accept and try later
+    dico = (data.get(CONF_CONCELHO) or "").strip()
+    if dico and not (dico.isdigit() and len(dico) == 4):
+        errors[CONF_CONCELHO] = "bad_concelho"
     if (data.get(CONF_LATITUDE) is None) != (data.get(CONF_LONGITUDE) is None):
         errors["base"] = "both_coords"
     return errors
@@ -74,6 +79,7 @@ def _clean(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data)
     out[CONF_MAP_KEY] = (out.get(CONF_MAP_KEY) or "").strip()
     out[CONF_FOGOS_KEY] = (out.get(CONF_FOGOS_KEY) or "").strip()
+    out[CONF_CONCELHO] = (out.get(CONF_CONCELHO) or "").strip()
     out[CONF_RADIUS] = int(out.get(CONF_RADIUS) or DEFAULT_RADIUS)
     return out
 

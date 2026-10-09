@@ -3,7 +3,7 @@
    custom:vigia-map-card  the fire map on its own, for a pop-up or a dashboard view
    https://github.com/eyeofeska/ha-vigia (MIT) */
 (() => {
-const VERSION = "0.1.6";
+const VERSION = "0.1.7";
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEVELS = [null,
   { name: "low", color: "#3DAA5C" }, { name: "moderate", color: "#D9A400" }, { name: "high", color: "#F07F1A" },
