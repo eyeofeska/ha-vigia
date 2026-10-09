@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Vigia wildfire watch",
+        "description": "Fire risk and warnings come from IPMA, incidents from fogos.pt. Add a free NASA FIRMS map key (firms.modaps.eosdis.nasa.gov/api/map_key) to include satellite hotspots. Home comes from Home Assistant unless you set a latitude and longitude.",
+        "data": {
+          "map_key": "NASA FIRMS map key (optional)",
+          "weather_entity": "Weather entity for wind at home",
+          "radius_km": "Map radius",
+          "use_fogos": "Use fogos.pt incidents",
+          "use_effis": "Show EFFIS burnt areas",
+          "latitude": "Latitude override",
+          "longitude": "Longitude override"
+        }
+      }
+    },
+    "error": {
+      "invalid_key": "NASA FIRMS did not accept this map key.",
+      "both_coords": "Set both latitude and longitude, or neither."
+    },
+    "abort": {
+      "single_instance_allowed": "Vigia is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Vigia settings",
+        "description": "Alert distances and wind limits are on the Vigia device page and in the tile's settings.",
+        "data": {
+          "map_key": "NASA FIRMS map key (optional)",
+          "weather_entity": "Weather entity for wind at home",
+          "radius_km": "Map radius",
+          "use_fogos": "Use fogos.pt incidents",
+          "use_effis": "Show EFFIS burnt areas",
+          "latitude": "Latitude override",
+          "longitude": "Longitude override"
+        }
+      }
+    },
+    "error": {
+      "invalid_key": "NASA FIRMS did not accept this map key.",
+      "both_coords": "Set both latitude and longitude, or neither."
+    }
+  }
+}

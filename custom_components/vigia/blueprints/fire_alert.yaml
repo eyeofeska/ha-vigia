@@ -1,0 +1,143 @@
+blueprint:
+  name: Vigia fire alert
+  description: >-
+    Sends Vigia's fire alerts to phones and flashes a light.
+    Close and upwind alerts break through Do Not Disturb (alarm channel on Android,
+    critical alert on iOS); watch alerts arrive as normal notifications.
+    Vigia sends one alert per fire and repeats only when the fire gets closer or moves up a tier.
+  domain: automation
+  source_url: https://github.com/eyeofeska/ha-vigia/blob/main/custom_components/vigia/blueprints/fire_alert.yaml
+  input:
+    phones:
+      name: Phones
+      description: Phones with the Home Assistant app that get the alerts.
+      default: []
+      selector:
+        device:
+          integration: mobile_app
+          multiple: true
+    urgent_tiers:
+      name: Urgent tiers
+      description: These break through Do Not Disturb.
+      default: [close, upwind]
+      selector:
+        select:
+          multiple: true
+          options:
+            - { label: "Close (any wind)", value: close }
+            - { label: "Upwind", value: upwind }
+            - { label: "Watch", value: watch }
+    signal_lights:
+      name: Signal light
+      description: Lights that flash for an alert (left as they were afterwards).
+      default: []
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    signal_tiers:
+      name: Tiers that flash the light
+      default: [close, upwind]
+      selector:
+        select:
+          multiple: true
+          options:
+            - { label: "Close", value: close }
+            - { label: "Upwind", value: upwind }
+            - { label: "Watch", value: watch }
+    signal_color:
+      name: Signal colour
+      default: [255, 40, 0]
+      selector:
+        color_rgb: {}
+    flashes:
+      name: Number of flashes
+      default: 8
+      selector:
+        number: { min: 1, max: 30, step: 1 }
+    include_tests:
+      name: Include test alerts
+      description: Pass on alerts from test mode and the "send test alert" button.
+      default: true
+      selector:
+        boolean: {}
+
+mode: queued
+max: 5
+
+triggers:
+  - trigger: event
+    event_type: vigia_alert
+
+variables:
+  phones: !input phones
+  urgent_tiers: !input urgent_tiers
+  signal_lights: !input signal_lights
+  signal_tiers: !input signal_tiers
+  include_tests: !input include_tests
+  alert: "{{ trigger.event.data }}"
+  urgent: "{{ alert.tier in urgent_tiers }}"
+
+conditions:
+  - condition: template
+    value_template: "{{ include_tests or not alert.test }}"
+
+actions:
+  - repeat:
+      for_each: "{{ phones }}"
+      sequence:
+        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+          continue_on_error: true
+          data:
+            title: "{{ alert.title }}"
+            message: "{{ alert.message }}"
+            data:
+              tag: "vigia-{{ alert.key }}"
+              group: vigia
+              ttl: 0
+              priority: high
+              channel: "{{ 'alarm_stream' if urgent else 'Vigia' }}"
+              importance: high
+              color: "{{ '#E0402C' if urgent else '#F07F1A' }}"
+              notification_icon: mdi:fire-alert
+              clickAction: "{{ alert.url }}"
+              url: "{{ alert.url }}"
+              push:
+                interruption-level: "{{ 'critical' if urgent else 'time-sensitive' }}"
+                sound:
+                  name: default
+                  critical: "{{ 1 if urgent else 0 }}"
+                  volume: 1.0
+              actions:
+                - action: URI
+                  title: Open fogos.pt
+                  uri: "{{ alert.url }}"
+  - if:
+      - condition: template
+        value_template: "{{ signal_lights | length > 0 and alert.tier in signal_tiers }}"
+    then:
+      - action: scene.create
+        data:
+          scene_id: vigia_before_signal
+          snapshot_entities: "{{ signal_lights }}"
+      - repeat:
+          count: !input flashes
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: "{{ signal_lights }}"
+              data:
+                rgb_color: !input signal_color
+                brightness: 255
+                transition: 0
+            - delay: { milliseconds: 700 }
+            - action: light.turn_on
+              target:
+                entity_id: "{{ signal_lights }}"
+              data:
+                brightness: 15
+                transition: 0
+            - delay: { milliseconds: 700 }
+      - action: scene.turn_on
+        target:
+          entity_id: scene.vigia_before_signal
